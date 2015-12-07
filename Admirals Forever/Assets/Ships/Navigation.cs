@@ -4,8 +4,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
-[RequireComponent(typeof(Rigidbody))]
-public class Navigation : MonoBehaviour {
+[RequireComponent(typeof(Rigidbody2D))]
+public class Navigation : MonoBehaviour, IObserver<ShipDestroyedMessage> {
 
     [SerializeField]
     protected float maxSpeed;
@@ -33,8 +33,8 @@ public class Navigation : MonoBehaviour {
             order.Despawn();
         movementOrders.Clear(); }
 
-    Queue<AttackOrderTuple> attackOrders = new Queue<AttackOrderTuple>();
-    public void addAttackOrder(AttackOrder order) { attackOrders.Enqueue(AttackOrderToTuple(order)); }
+    List<AttackOrderTuple> attackOrders = new List<AttackOrderTuple>(); //use as a queue, but with random access to remove dead ships
+    public void addAttackOrder(AttackOrder order) { order.target.Subscribe(this); attackOrders.Add(AttackOrderToTuple(order)); }
     public void clearAttackOrders()
     {
         foreach (AttackOrderTuple order in attackOrders)
@@ -42,11 +42,18 @@ public class Navigation : MonoBehaviour {
         attackOrders.Clear();
     }
 
-    Rigidbody rigid;
+    Rigidbody2D rigid;
+
+    Quaternion rotation;
 
     void Awake()
     {
-        rigid = GetComponent<Rigidbody>();
+        rigid = GetComponent<Rigidbody2D>();
+    }
+
+    void Start()
+    {
+        rotation = Quaternion.Euler(0, 0, rigid.rotation);
     }
 	// Use this for initialization
 
@@ -82,7 +89,7 @@ public class Navigation : MonoBehaviour {
         }
         else if (attackOrders.Count != 0)
         {
-            RotateTowards(attackOrders.Peek().order.target.transform.position - transform.position);
+            RotateTowards(attackOrders[0].order.target.transform.position - transform.position);
         }
         else if (movementOrders.Count != 0)
         {
@@ -105,7 +112,8 @@ public class Navigation : MonoBehaviour {
 
     void RotateTowards(Vector2 direction)
     {
-        rigid.MoveRotation(Quaternion.RotateTowards(rigid.rotation, direction.ToRotation(), rotationSpeed * Time.fixedDeltaTime));
+        rotation = Quaternion.RotateTowards(rotation, direction.ToRotation(), rotationSpeed * Time.fixedDeltaTime);
+        rigid.MoveRotation(rotation.ToZRotation());
     }
 
     MovementOrderTuple MovementOrderToTuple(MovementOrder order)
@@ -145,6 +153,19 @@ public class Navigation : MonoBehaviour {
             }
         }
         return result;
+    }
+
+    public void Notify(ShipDestroyedMessage message)
+    {
+        for(int i = 0; i < attackOrders.Count; i++)
+        {
+            if (attackOrders[i].order.target == message.destroyedShip)
+            {
+                attackOrders[i].Despawn();
+                attackOrders.RemoveAt(i);
+                return;
+            }
+        }
     }
 }
 

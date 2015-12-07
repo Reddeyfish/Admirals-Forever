@@ -69,3 +69,22 @@ public static class VectorExtension
         return new Vector2(-dir.y, dir.x);
     }
 }
+
+public static class QuaternionExtension
+{
+    public static float ToZRotation(this Quaternion quat)
+    {
+        float angle = 0;
+        Vector3 axis = Vector3.forward;
+        quat.ToAngleAxis(out angle, out axis);
+        return angle * Mathf.Sign(axis.z);
+    }
+}
+
+public static class ObjectExtension
+{
+    public static Object Instantiate(this Object callingScript, Object original, Vector3 position)
+    {
+        return Object.Instantiate(original, position, Quaternion.identity);
+    }
+}

@@ -1,17 +1,17 @@
 ﻿using UnityEngine;
 using System.Collections;
 
-//moves it's rigidbody to follow the player's transform
+//moves it's Rigidbody2D to follow the player's transform
 
-[RequireComponent(typeof(Rigidbody))]
+[RequireComponent(typeof(Rigidbody2D))]
 public class FollowLerp : MonoBehaviour {
     public float smoothTime = 1f;
 
     private Transform player;
-    private Rigidbody rigid;
+    private Rigidbody2D rigid;
 	// Use this for initialization
 	void Start () {
-        rigid = GetComponent<Rigidbody>();
+        rigid = GetComponent<Rigidbody2D>();
         player = GameObject.FindGameObjectWithTag(Tags.player).transform;
 	}
 	

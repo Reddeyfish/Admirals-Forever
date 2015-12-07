@@ -22,4 +22,9 @@ public static class RandomLib {
         }
         return originalArray;
     }
+
+    public static Quaternion Random2DRotation()
+    {
+        return Quaternion.AngleAxis(Random.Range(0f, 360f), Vector3.forward);
+    }
 }

@@ -18,5 +18,6 @@ public class SingleBulletWeapon : ArcedWeapon {
         spawnedBullet.range = range;
         spawnedBullet.Target = target;
         spawnedBullet.Side = myShip.Side;
+        spawnedBullet.BaseHue = myShip.BaseHue;
     }
 }

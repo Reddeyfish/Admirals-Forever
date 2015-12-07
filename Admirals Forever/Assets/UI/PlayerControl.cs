@@ -41,7 +41,7 @@ public class PlayerControl : MonoBehaviour, IObserver<DoubleLeftMouseClickMessag
 
     public void Notify(DoubleLeftMouseClickMessage m)
     {
-        Ship spawnedShip = SimplePool.Spawn(enemyShip, m.worldPoint).GetComponent<Ship>();
+        Ship spawnedShip = (Instantiate(enemyShip, m.worldPoint, RandomLib.Random2DRotation()) as GameObject).GetComponent<Ship>();
         spawnedShip.Side = 1;
         selectedShip.addAttackOrder(new AttackOrder(spawnedShip));
     }

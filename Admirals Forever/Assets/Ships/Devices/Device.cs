@@ -1,7 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections;
 
-public abstract class Device : MonoBehaviour {
+public abstract class Device : MonoBehaviour, IObserver<SectionDestroyedMessage> {
 
     [SerializeField]
     protected float cooldownTime;
@@ -55,12 +55,35 @@ public abstract class Device : MonoBehaviour {
         }
     }
     protected virtual void Awake() { }
-    protected virtual void Start() { OnReady(); }
+    protected virtual void Start() 
+    {
+        OnReady();
+        foreach (IObservable<SectionDestroyedMessage> observable in GetComponentsInParent<IObservable<SectionDestroyedMessage>>())
+        {
+            observable.Subscribe(this);
+        }
+    }
     protected virtual void OnActivate() { }
-    protected virtual void OnDeactivate() { Callback.FireAndForget(() => Ready = true, cooldownTime, this); Debug.Log("Cooldown"); }
+    protected virtual void OnDeactivate() { Callback.FireAndForget(() => Ready = true, cooldownTime, this); }
     protected virtual void OnReady() { }
     protected void Fire()
     {
         Active = true;
+    }
+
+    public virtual void Notify(SectionDestroyedMessage message)
+    {
+        foreach (IObservable<SectionDestroyedMessage> observable in GetComponentsInParent<IObservable<SectionDestroyedMessage>>())
+        {
+            observable.Unsubscribe(this);
+        }
+
+        //there should't be any children, so it's ok to destroy it now
+        DestroySelf();
+    }
+
+    protected virtual void DestroySelf()
+    {
+        Destroy(this.gameObject);
     }
 }

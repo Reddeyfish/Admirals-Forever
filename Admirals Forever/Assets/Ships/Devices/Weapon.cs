@@ -2,8 +2,8 @@
 using System.Collections;
 using System.Collections.Generic;
 
-[RequireComponent(typeof(SphereCollider))]
-public abstract class Weapon : Device {
+[RequireComponent(typeof(CircleCollider2D))]
+public abstract class Weapon : Device, IObserver<ShipDestroyedMessage> {
     [SerializeField]
     protected float range;
 
@@ -15,36 +15,47 @@ public abstract class Weapon : Device {
     protected override void Awake()
     {
         base.Awake();
-        GetComponent<SphereCollider>().radius = range;
+        GetComponent<CircleCollider2D>().radius = range;
     }
 
     protected override void Start()
     {
         navigation = GetComponentInParent<Navigation>();
         myShip = GetComponentInParent<Ship>();
-        foreach (Collider coll in Physics.OverlapSphere(this.transform.position, range))
+        foreach (Collider2D coll in Physics2D.OverlapCircleAll(this.transform.position, range))
         {
-            OnTriggerEnter(coll);
+            OnTriggerEnter2D(coll);
         }
         base.Start();
     }
 
-    void OnTriggerEnter(Collider other)
+    void OnTriggerEnter2D(Collider2D other)
     {
         if (!other.CompareTag(Tags.ship))
             return;
         Ship otherShip = other.GetComponentInParent<Ship>();
         if (otherShip != null)
+        {
             targets.Add(otherShip);
+            otherShip.Subscribe<ShipDestroyedMessage>(this);
+        }
     }
 
-    void OnTriggerExit(Collider other)
+    void OnTriggerExit2D(Collider2D other)
     {
         if (!other.CompareTag(Tags.ship))
             return;
         Ship otherShip = other.GetComponentInParent<Ship>();
         if (otherShip != null)
+        {
             targets.Remove(otherShip);
+            otherShip.Unsubscribe<ShipDestroyedMessage>(this);
+        }
+    }
+
+    public virtual void Notify(ShipDestroyedMessage message)
+    {
+        targets.Remove(message.destroyedShip as Ship);
     }
 
     protected override void OnReady()
@@ -107,7 +118,7 @@ public abstract class Weapon : Device {
 
     protected virtual bool validTarget(Ship ship)
     {
-        return ship.Side != myShip.Side;
+        return !(ship is AbstractBullet) && ship.Side != myShip.Side;
     }
 
     protected abstract void Fire(Ship target);
