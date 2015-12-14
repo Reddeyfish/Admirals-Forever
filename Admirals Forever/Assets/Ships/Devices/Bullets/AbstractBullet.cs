@@ -3,7 +3,7 @@ using System.Collections;
 
 [RequireComponent(typeof(Collider2D))]
 [RequireComponent(typeof(Rigidbody2D))]
-public abstract class AbstractBullet : Ship {
+public abstract class AbstractBullet : AbstractShip {
     
     public float range {get; set;}
 
@@ -16,8 +16,10 @@ public abstract class AbstractBullet : Ship {
         }
     }
 
-    Ship target;
-    public Ship Target { get { return target; }
+    Vector2 target;
+    public Vector2 Target
+    {
+        get { return target; }
         set 
         { 
             target = value;
@@ -33,7 +35,7 @@ public abstract class AbstractBullet : Ship {
         rigid = GetComponent<Rigidbody2D>();
     }
 
-    protected abstract void SetMotion(Ship target);
+    protected abstract void SetMotion(Vector2 target);
     protected abstract void SetTTL();
 
     void OnTriggerEnter2D(Collider2D other)

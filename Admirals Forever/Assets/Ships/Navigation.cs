@@ -4,20 +4,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
-[RequireComponent(typeof(Rigidbody2D))]
-public class Navigation : MonoBehaviour, IObserver<ShipDestroyedMessage> {
-
-    [SerializeField]
-    protected float maxSpeed;
-    public float MaxSpeed { get { return maxSpeed; } }
-
-    [SerializeField]
-    protected float accel;
-    public float Accel { get { return accel; } }
-
-    [SerializeField]
-    protected float rotationSpeed;
-    public float RotationSpeed { get { return rotationSpeed; } }
+[RequireComponent(typeof(LineRenderer))]
+public class Navigation : AbstractNavigation, IObserver<ShipDestroyedMessage>{
 
     [SerializeField]
     protected GameObject waypointUI;
@@ -26,15 +14,24 @@ public class Navigation : MonoBehaviour, IObserver<ShipDestroyedMessage> {
     [SerializeField]
     protected GameObject attackUI;
 
+    LineRenderer lineRenderer;
+    const int numLineSegments = 100;
+
+    public bool Selected
+    {
+        get { return lineRenderer.enabled; }
+        set { lineRenderer.enabled = value; }
+    }
+
     Queue<MovementOrderTuple> movementOrders = new Queue<MovementOrderTuple>();
-    public void addMovementOrder(MovementOrder order) { movementOrders.Enqueue(MovementOrderToTuple(order)); }
+    public void addMovementOrder(AbstractMovementOrder order) { if(!(order is AutomaticMovementOrder)) RemoveAutomaticOrders(); movementOrders.Enqueue(MovementOrderToTuple(order)); }
     public void clearMovementOrders() {
         foreach (MovementOrderTuple order in movementOrders)
             order.Despawn();
         movementOrders.Clear(); }
 
     List<AttackOrderTuple> attackOrders = new List<AttackOrderTuple>(); //use as a queue, but with random access to remove dead ships
-    public void addAttackOrder(AttackOrder order) { order.target.Subscribe(this); attackOrders.Add(AttackOrderToTuple(order)); }
+    public void addAttackOrder(AttackOrder order) { if (!(order is AutomaticAttackOrder)) RemoveAutomaticOrders(); order.target.Subscribe<ShipDestroyedMessage>(this); attackOrders.Add(AttackOrderToTuple(order)); }
     public void clearAttackOrders()
     {
         foreach (AttackOrderTuple order in attackOrders)
@@ -42,50 +39,46 @@ public class Navigation : MonoBehaviour, IObserver<ShipDestroyedMessage> {
         attackOrders.Clear();
     }
 
-    Rigidbody2D rigid;
-
-    Quaternion rotation;
-
-    void Awake()
+    protected override void Awake()
     {
-        rigid = GetComponent<Rigidbody2D>();
+        base.Awake();
+        lineRenderer = GetComponent<LineRenderer>();
+        Bounds bounds = GetComponent<Renderer>().bounds;
+        foreach (Renderer rend in GetComponentsInChildren<Renderer>())
+        {
+            bounds.Encapsulate(rend.bounds);
+        }
+        float magnitude = bounds.extents.magnitude;
+        lineRenderer.SetVertexCount(numLineSegments + 1);
+        for (int i = 0; i <= numLineSegments; i++)
+        {
+            float angle = (2 * Mathf.PI * i) / numLineSegments;
+            lineRenderer.SetPosition(i, magnitude * new Vector2(Mathf.Sin(angle), Mathf.Cos(angle)));
+        }
     }
 
-    void Start()
-    {
-        rotation = Quaternion.Euler(0, 0, rigid.rotation);
-    }
-	// Use this for initialization
-
-    void FixedUpdate()
-    {
-        DoMovement();
-        //rotation
-        DoRotation();
-    }
-
-    void DoMovement()
+    protected override void DoMovement()
     {
         if (movementOrders.Count != 0)
         {
-            Vector2 movementDirection = movementOrders.Peek().order.position - (Vector2)(transform.position);
+            Vector2 movementDirection = movementOrders.Peek().order.Position - (Vector2)(transform.position);
             Assert.IsTrue(movementOrders.Peek().order.maxSpeed <= maxSpeed);
             Assert.IsTrue(movementOrders.Peek().order.accel <= accel);
-            rigid.velocity = Vector2.MoveTowards(rigid.velocity, movementOrders.Peek().order.maxSpeed * movementDirection.normalized, movementOrders.Peek().order.maxSpeed * movementOrders.Peek().order.accel * Time.fixedDeltaTime);
+            MoveTowards(movementDirection, movementOrders.Peek().order.maxSpeed, movementOrders.Peek().order.accel);
             if (rigid.velocity.magnitude * Time.fixedDeltaTime > movementDirection.magnitude) //we'll overshoot the next FixedUpdate
                 movementOrders.Dequeue().Despawn();
         }
         else
         {
-            rigid.velocity = Vector2.MoveTowards(rigid.velocity, Vector2.zero, accel * Time.fixedDeltaTime);
+            MoveTowards(Vector2.zero);
         }
     }
 
-    void DoRotation()
+    protected override void DoRotation()
     {
-        if (movementOrders.Count != 0 && movementOrders.Peek().order is MoveFaceOrder)
+        if (movementOrders.Count != 0 && movementOrders.Peek().order is IFaceOrder)
         {
-            RotateTowards((movementOrders.Peek().order as MoveFaceOrder).facingDirection);
+            RotateTowards((movementOrders.Peek().order as IFaceOrder).FacingDirection);
         }
         else if (attackOrders.Count != 0)
         {
@@ -93,7 +86,16 @@ public class Navigation : MonoBehaviour, IObserver<ShipDestroyedMessage> {
         }
         else if (movementOrders.Count != 0)
         {
-            RotateTowards(movementOrders.Peek().order.position - (Vector2)(transform.position));
+            RotateTowards(movementOrders.Peek().order.Position - (Vector2)(transform.position));
+        }
+        else
+        {
+            Ship target = bestTarget();
+            if(target != null)
+            {
+                addAttackOrder(new AutomaticAttackOrder(target));
+                addMovementOrder(new AutomaticMovementOrder(target, preferredRange, this, MaxSpeed, Accel));
+            }
         }
     }
 
@@ -110,28 +112,26 @@ public class Navigation : MonoBehaviour, IObserver<ShipDestroyedMessage> {
         }
     }
 
-    void RotateTowards(Vector2 direction)
-    {
-        rotation = Quaternion.RotateTowards(rotation, direction.ToRotation(), rotationSpeed * Time.fixedDeltaTime);
-        rigid.MoveRotation(rotation.ToZRotation());
-    }
-
-    MovementOrderTuple MovementOrderToTuple(MovementOrder order)
+    MovementOrderTuple MovementOrderToTuple(AbstractMovementOrder order)
     {
         WaypointUI ui = SimplePool.Spawn(waypointUI).GetComponent<WaypointUI>();
-        ui.Start = movementOrders.Count != 0 ? ui.Start = movementOrders.Last<MovementOrderTuple>().order.position : (Vector2)(this.transform.position);
-        ui.End = order.position;
+        MovementOrderTuple result;
+        
         if (order is MoveFaceOrder)
         {
             FacingUI facing = SimplePool.Spawn(facingUI).GetComponent<FacingUI>();
-            facing.Position = order.position;
-            facing.Direction = (order as MoveFaceOrder).facingDirection;
-            return new MoveFaceOrderTuple(order, ui, facing);
+            result = new MoveFaceOrderTuple(order, ui, facing);
+            facing.Position = order.Position;
+            facing.Direction = (order as MoveFaceOrder).FacingDirection;
         }
         else
         {
-            return new MovementOrderTuple(order, ui);
+            result = new MovementOrderTuple(order, ui);
         }
+
+        ui.Start = movementOrders.Count != 0 ? ui.Start = movementOrders.Last<MovementOrderTuple>().order.Position : (Vector2)(this.transform.position);
+        ui.End = order.Position;
+        return result;
     }
 
     AttackOrderTuple AttackOrderToTuple(AttackOrder order)
@@ -142,7 +142,22 @@ public class Navigation : MonoBehaviour, IObserver<ShipDestroyedMessage> {
         return new AttackOrderTuple(order, ui);
     }
 
-    public List<Ship> FilterTargets(HashSet<Ship> targets)
+    void RemoveAutomaticOrders()
+    {
+        if (attackOrders.Count != 0 && attackOrders[0].order is AutomaticAttackOrder)
+        {
+            attackOrders[0].Despawn();
+            attackOrders.RemoveAt(0);
+        }
+
+        if (movementOrders.Count != 0 && movementOrders.Peek().order is AutomaticMovementOrder)
+        {
+            movementOrders.Peek().Despawn();
+            movementOrders.Dequeue();
+        }
+    }
+
+    public override List<Ship> FilterTargets(HashSet<Ship> targets)
     {
         List<Ship> result = new List<Ship>();
         foreach (AttackOrderTuple order in attackOrders)
@@ -163,21 +178,34 @@ public class Navigation : MonoBehaviour, IObserver<ShipDestroyedMessage> {
             {
                 attackOrders[i].Despawn();
                 attackOrders.RemoveAt(i);
-                return;
             }
         }
+
+        if (movementOrders.Count != 0 && movementOrders.Peek().order is AutomaticMovementOrder && (movementOrders.Peek().order as AutomaticMovementOrder).target == message.destroyedShip)
+        {
+            movementOrders.Peek().Despawn();
+            movementOrders.Dequeue();
+        }
+    }
+
+    void OnDestroy()
+    {
+        clearMovementOrders();
+        clearAttackOrders();
     }
 }
 
 public class MovementOrderTuple
 {
-    public readonly MovementOrder order;
+    public readonly AbstractMovementOrder order;
     public readonly WaypointUI ui;
 
-    public MovementOrderTuple(MovementOrder order, WaypointUI ui)
+    public MovementOrderTuple(AbstractMovementOrder order, WaypointUI ui)
     {
         this.order = order;
         this.ui = ui;
+        if (order is AutomaticMovementOrder)
+            (order as AutomaticMovementOrder).UI = ui;
     }
 
     public virtual void Despawn()
@@ -190,7 +218,8 @@ public class MoveFaceOrderTuple : MovementOrderTuple
 {
     public readonly FacingUI facingUI;
 
-    public MoveFaceOrderTuple(MovementOrder order, WaypointUI ui, FacingUI facingUI) : base(order, ui)
+    public MoveFaceOrderTuple(AbstractMovementOrder order, WaypointUI ui, FacingUI facingUI)
+        : base(order, ui)
     {
         this.facingUI = facingUI;
     }
@@ -202,28 +231,69 @@ public class MoveFaceOrderTuple : MovementOrderTuple
     }
 }
 
-
-public class MovementOrder
+public abstract class AbstractMovementOrder
 {
-    public readonly Vector2 position;
+    public abstract Vector2 Position {get;}
     public readonly float maxSpeed;
     public readonly float accel;
-    public MovementOrder(Vector2 position, float maxSpeed, float accel)
+    public AbstractMovementOrder(float maxSpeed, float accel)
     {
-        this.position = position;
         this.maxSpeed = maxSpeed;
         this.accel = accel;
     }
 }
 
-public class MoveFaceOrder : MovementOrder
+public class MovementOrder : AbstractMovementOrder
 {
-    public readonly Vector2 facingDirection;
+    readonly Vector2 position;
+    public override Vector2 Position { get { return position; } }
+    public MovementOrder(Vector2 position, float maxSpeed, float accel)
+        :base(maxSpeed, accel)
+    {
+        this.position = position;
+    }
+}
+
+public interface IFaceOrder
+{
+    Vector2 FacingDirection { get; }
+}
+
+public class MoveFaceOrder : MovementOrder, IFaceOrder
+{
+    readonly Vector2 facingDirection;
+    public Vector2 FacingDirection { get { return facingDirection; } }
 
     public MoveFaceOrder(Vector2 position, float maxSpeed, float accel, Vector2 direction)
         : base(position, maxSpeed, accel)
     {
         this.facingDirection = direction;
+    }
+}
+
+public class AutomaticMovementOrder : AbstractMovementOrder, IFaceOrder
+{
+    public readonly Ship target;
+    public readonly float preferredRange;
+    public readonly Navigation self;
+    WaypointUI ui;
+    public WaypointUI UI { set { ui = value; } }
+    public override Vector2 Position { 
+        get
+        { 
+            Vector2 displacement = self.transform.position - target.transform.position;
+            Vector2 result = preferredRange * displacement.normalized + ((Vector2)(target.transform.position));
+            ui.End = result;
+            return result;
+        }
+    }
+    public Vector2 FacingDirection { get { return target.transform.position - self.transform.position; } }
+    public AutomaticMovementOrder(Ship target, float preferredRange, Navigation self, float maxSpeed, float accel)
+        :base(maxSpeed, accel)
+    {
+        this.target = target;
+        this.preferredRange = preferredRange;
+        this.self = self;
     }
 }
 
@@ -252,4 +322,9 @@ public class AttackOrder
     {
         this.target = target;
     }
+}
+
+public class AutomaticAttackOrder : AttackOrder
+{
+    public AutomaticAttackOrder(Ship target) : base(target) { }
 }

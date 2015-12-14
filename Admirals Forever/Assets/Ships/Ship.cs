@@ -1,5 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 
 public abstract class AbstractShip : MonoBehaviour, IObservable<ShipDestroyedMessage> {
 
@@ -53,9 +55,20 @@ public class Ship : AbstractShip, IObserver<SectionDestroyedMessage>
         GetComponent<Section>().Subscribe(this);
     }
 
+    void Start()
+    {
+        //disable self-ship collisions
+        Collider2D[] childColliders = GetComponentsInChildren<Collider2D>();
+        List<Collider2D> validColliders = new List<Collider2D>(childColliders.Where((Collider2D col) => !col.isTrigger));
+        foreach (Collider2D coll1 in validColliders)
+            foreach (Collider2D coll2 in validColliders)
+                Physics2D.IgnoreCollision(coll1, coll2);
+    }
+
     public void Notify(SectionDestroyedMessage message)
     {
         shipDestroyedObservable.Post(new ShipDestroyedMessage(this));
+        Destroy(this);
     }
 }
 

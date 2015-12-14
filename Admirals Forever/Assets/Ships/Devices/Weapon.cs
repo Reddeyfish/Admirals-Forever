@@ -6,10 +6,11 @@ using System.Collections.Generic;
 public abstract class Weapon : Device, IObserver<ShipDestroyedMessage> {
     [SerializeField]
     protected float range;
+    public float Range { get { return range; } }
 
     protected HashSet<Ship> targets = new HashSet<Ship>();
 
-    Navigation navigation;
+    AbstractNavigation navigation;
     protected Ship myShip;
 
     protected override void Awake()
@@ -20,7 +21,7 @@ public abstract class Weapon : Device, IObserver<ShipDestroyedMessage> {
 
     protected override void Start()
     {
-        navigation = GetComponentInParent<Navigation>();
+        navigation = GetComponentInParent<AbstractNavigation>();
         myShip = GetComponentInParent<Ship>();
         foreach (Collider2D coll in Physics2D.OverlapCircleAll(this.transform.position, range))
         {
@@ -118,7 +119,7 @@ public abstract class Weapon : Device, IObserver<ShipDestroyedMessage> {
 
     protected virtual bool validTarget(Ship ship)
     {
-        return !(ship is AbstractBullet) && ship.Side != myShip.Side;
+        return ship.Side != myShip.Side;
     }
 
     protected abstract void Fire(Ship target);

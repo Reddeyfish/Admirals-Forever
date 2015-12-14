@@ -19,16 +19,14 @@ public class Tags{
         public const string select = "PlayerRegistration";
     }
 
-    //public class Axis
-    //{
-    //    //public const string horizontal = "Horizontal";
-    //    //public const string vertical = "Vertical";
-    //}
+    public class Axis
+    {
+        public const string mouseScrollWheel = "Mouse ScrollWheel";
+    }
 
     public class Layers
     {
-        public const string movable = "Movables";
-        public const string stage = "Stage";
+        public const string ships = "Ships";
     }
 
     public class AnimatorParams

@@ -369,7 +369,8 @@ public class Countdown
     /// </summary>
     public void Stop()
     {
-        callingScript.StopCoroutine(countdown);
+        if(countdown != null)
+            callingScript.StopCoroutine(countdown);
     }
 
     /// <summary>

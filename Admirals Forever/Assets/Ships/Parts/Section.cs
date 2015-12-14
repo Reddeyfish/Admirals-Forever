@@ -13,11 +13,16 @@ public class Section : MonoBehaviour, IObservable<SectionDestroyedMessage>, IObs
     [SerializeField]
     protected float adriftRotation;
 
+    [SerializeField]
+    protected float hueChangeTime;
+
+    [SerializeField]
+    protected float hueChangeTimeVariance;
+
     public int Side { get { return myShip.Side; } }
 
     float health;
     public float Health { get { return health; } }
-    float myHue;
     Ship myShip;
     SpriteRenderer spriteRenderer;
     Observable<SectionDestroyedMessage> sectionDestroyedObservable = new Observable<SectionDestroyedMessage>();
@@ -35,19 +40,37 @@ public class Section : MonoBehaviour, IObservable<SectionDestroyedMessage>, IObs
     void Start()
     {
         myShip = GetComponentInParent<Ship>();
-        myHue = myShip.getHue();
         spriteRenderer = GetComponent<SpriteRenderer>();
-        spriteRenderer.color = HSVColor.HSVToRGB(myHue, 1, 1);
+        StartCoroutine(ModifyHue());
         foreach (IObservable<SectionDestroyedMessage> observable in GetComponentsInParent<IObservable<SectionDestroyedMessage>>())
         {
             observable.Subscribe(this);
         }
-        Debug.Log(Side);
+    }
+
+    IEnumerator ModifyHue()
+    {
+        float oldHue = myShip.getHue();
+        for (; ; )
+        {
+            float newHue = myShip.getHue();
+            yield return StartCoroutine(Callback.Routines.DoLerpRoutine((float l) => spriteRenderer.color = getColor(Mathf.Lerp(oldHue, newHue, l)), hueChangeTime + Random.value * hueChangeTimeVariance, this));
+            oldHue = newHue;
+        }
     }
 
     void OnCollisionEnter2D(Collision2D other)
     {
-        Debug.Log("Ding");
+        if (other.collider.CompareTag(Tags.ship))
+        {
+            Section hitSection = other.collider.GetComponent<Section>();
+            if (hitSection && hitSection.Side != this.Side)
+            {
+                float damage = Mathf.Min(hitSection.Health, this.Health);
+                hitSection.takeHit(damage);
+                this.takeHit(damage);
+            }
+        }
     }
 
     public void takeHit(float damage)
@@ -57,13 +80,12 @@ public class Section : MonoBehaviour, IObservable<SectionDestroyedMessage>, IObs
         {
             sectionDestroyedObservable.Post(new SectionDestroyedMessage(this));
         }
-        spriteRenderer.color = getColor();
     }
 
-    Color getColor()
+    Color getColor(float myHue)
     {
         float healthFraction = health / maxHealth;
-        return HSVColor.HSVToRGB(myHue, healthFraction, 0.9f * healthFraction + 0.1f);
+        return HSVColor.HSVToRGB(myHue, healthFraction, 0.5f * healthFraction + 0.5f);
     }
 
     public void Notify(SectionDestroyedMessage message)
@@ -73,6 +95,16 @@ public class Section : MonoBehaviour, IObservable<SectionDestroyedMessage>, IObs
             if((Section)observable != this)
                 observable.Unsubscribe(this);
         }
+
+        if (health > 0)
+        {
+            sectionDestroyedObservable.Clear();
+            this.Subscribe<SectionDestroyedMessage>(this);
+            Ship newShip = gameObject.AddComponent<Ship>();
+            newShip.Copy(myShip);
+            myShip = newShip;
+        }
+
         Callback.FireForUpdate(() =>
             {
                 this.transform.SetParent(null, true);
@@ -87,10 +119,6 @@ public class Section : MonoBehaviour, IObservable<SectionDestroyedMessage>, IObs
                     rigid.gravityScale = 0;
                     rigid.velocity = myShip.GetComponent<Rigidbody2D>().velocity + adriftSpeed * (Vector2)(this.transform.position - message.destroyedSection.transform.position).normalized;
                     rigid.angularVelocity = Random.Range(-adriftRotation, adriftRotation);
-
-                    Ship newShip = gameObject.AddComponent<Ship>();
-                    newShip.Copy(myShip);
-                    myShip = newShip;
                 }
 
             }, this, Callback.Mode.FIXEDUPDATE);

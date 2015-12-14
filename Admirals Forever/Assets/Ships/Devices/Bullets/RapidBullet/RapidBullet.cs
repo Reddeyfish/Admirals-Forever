@@ -1,8 +1,8 @@
 ﻿using UnityEngine;
 using System.Collections;
-[RequireComponent(typeof(ParticlesObeyRotation))]
+
 [RequireComponent(typeof(SpriteRenderer))]
-public class Bullet : StandardBullet
+public class RapidBullet : StandardBullet
 {
     [SerializeField]
     protected float speed;
@@ -10,22 +10,20 @@ public class Bullet : StandardBullet
     [SerializeField]
     protected float spread;
 
-    ParticlesObeyRotation particles;
     SpriteRenderer spriteRenderer;
 
     protected override void Awake()
     {
         base.Awake();
-        particles = GetComponent<ParticlesObeyRotation>();
         spriteRenderer = GetComponent<SpriteRenderer>();
     }
 
     protected override void SetMotion(Vector2 target)
     {
         Vector2 targetVector = target - (Vector2)(this.transform.position);
-        transform.rotation = targetVector.ToRotation() * Quaternion.AngleAxis(Random.Range(-spread, spread), Vector3.forward);
-        particles.DoUpdate();
+        transform.rotation = targetVector.ToRotation();
         rigid.velocity = speed * transform.right;
+        transform.position += (Vector3)(spread * Random.insideUnitCircle);
     }
     protected override void SetTTL()
     {
@@ -34,7 +32,5 @@ public class Bullet : StandardBullet
 
     protected override void SetColor(Color color)
     {
-        spriteRenderer.color = color;
-        particles.ParticleSystem.startColor = color;
     }
 }
