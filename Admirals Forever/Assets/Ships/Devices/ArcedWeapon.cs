@@ -14,6 +14,6 @@ public abstract class ArcedWeapon : Weapon {
         if (!base.validTarget(ship))
             return false;
         Vector2 targetDirection = ship.transform.position - this.transform.position;
-        return Mathf.Abs(Vector3.Angle(transform.TransformVector(direction), targetDirection)) < arc;
+        return targetDirection.magnitude < range && Mathf.Abs(Vector3.Angle(transform.TransformVector(direction), targetDirection)) < arc;
     }
 }

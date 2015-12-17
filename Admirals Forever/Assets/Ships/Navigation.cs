@@ -16,12 +16,33 @@ public class Navigation : AbstractNavigation, IObserver<ShipDestroyedMessage>{
 
     LineRenderer lineRenderer;
     const int numLineSegments = 100;
-
-    public bool Selected
+    readonly static Color selectedColor = new Color(0.5f, 1, 0.5f);
+    readonly static Color highlightedColor = new Color(0.5f, 1, 0.5f, 0.5f);
+    SelectionMode selectionMode = SelectionMode.UNSELECTED;
+    public SelectionMode Selection
     {
-        get { return lineRenderer.enabled; }
-        set { lineRenderer.enabled = value; }
+        get { return selectionMode; }
+        set 
+        {
+            switch (value)
+            {
+                case SelectionMode.UNSELECTED:
+                    lineRenderer.enabled = false;
+                    break;
+                case SelectionMode.SELECTED:
+                    lineRenderer.enabled = true;
+                    lineRenderer.SetColors(selectedColor, selectedColor);
+                    break;
+                case SelectionMode.HIGHLIGHTED:
+                    lineRenderer.enabled = true;
+                    lineRenderer.SetColors(highlightedColor, highlightedColor);
+                    break;
+
+            }
+            selectionMode = value;
+        }
     }
+    public bool Selected { get { return Selection == SelectionMode.SELECTED; } }
 
     Queue<MovementOrderTuple> movementOrders = new Queue<MovementOrderTuple>();
     public void addMovementOrder(AbstractMovementOrder order) { if(!(order is AutomaticMovementOrder)) RemoveAutomaticOrders(); movementOrders.Enqueue(MovementOrderToTuple(order)); }
@@ -192,6 +213,13 @@ public class Navigation : AbstractNavigation, IObserver<ShipDestroyedMessage>{
     {
         clearMovementOrders();
         clearAttackOrders();
+    }
+
+    public enum SelectionMode
+    {
+        UNSELECTED,
+        SELECTED,
+        HIGHLIGHTED
     }
 }
 

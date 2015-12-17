@@ -3,7 +3,8 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 
-public abstract class AbstractShip : MonoBehaviour, IObservable<ShipDestroyedMessage> {
+public abstract class AbstractShip : MonoBehaviour, IObservable<ShipDestroyedMessage>, IObservable<SelfShipDestroyedMessage>
+{
 
     [CanBeDefaultOrNull]
     [SerializeField]
@@ -33,6 +34,9 @@ public abstract class AbstractShip : MonoBehaviour, IObservable<ShipDestroyedMes
 
     protected Observable<ShipDestroyedMessage> shipDestroyedObservable = new Observable<ShipDestroyedMessage>();
     public Observable<ShipDestroyedMessage> Observable(IObservable<ShipDestroyedMessage> self) { return shipDestroyedObservable; }
+
+    protected Observable<SelfShipDestroyedMessage> selfShipDestroyedObservable = new Observable<SelfShipDestroyedMessage>();
+    public Observable<SelfShipDestroyedMessage> Observable(IObservable<SelfShipDestroyedMessage> self) { return selfShipDestroyedObservable; }
 
     public float getHue()
     {
@@ -68,6 +72,7 @@ public class Ship : AbstractShip, IObserver<SectionDestroyedMessage>
     public void Notify(SectionDestroyedMessage message)
     {
         shipDestroyedObservable.Post(new ShipDestroyedMessage(this));
+        selfShipDestroyedObservable.Post(new SelfShipDestroyedMessage());
         Destroy(this);
     }
 }
@@ -80,4 +85,8 @@ public class ShipDestroyedMessage
     {
         this.destroyedShip = destroyedShip;
     }
+}
+
+public class SelfShipDestroyedMessage {
+    public SelfShipDestroyedMessage() { }
 }

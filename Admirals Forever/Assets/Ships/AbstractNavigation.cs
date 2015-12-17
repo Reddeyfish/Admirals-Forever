@@ -4,7 +4,7 @@ using System.Collections;
 using System.Collections.Generic;
 
 [RequireComponent(typeof(Rigidbody2D))]
-public abstract class AbstractNavigation : MonoBehaviour, IObserver<SectionDestroyedMessage>
+public abstract class AbstractNavigation : MonoBehaviour, IObserver<SectionDestroyedMessage>, IObserver<SelfShipDestroyedMessage>
 {
     [SerializeField]
     protected float maxSpeed;
@@ -33,6 +33,7 @@ public abstract class AbstractNavigation : MonoBehaviour, IObserver<SectionDestr
     {
         rigid = GetComponent<Rigidbody2D>();
         myShip = GetComponent<AbstractShip>();
+        myShip.Subscribe<SelfShipDestroyedMessage>(this);
     }
 
     protected virtual void Start()
@@ -62,7 +63,7 @@ public abstract class AbstractNavigation : MonoBehaviour, IObserver<SectionDestr
                 if (weapons[i].Range < minRange)
                     minRange = weapons[i].Range;
             }
-            preferredRange = Mathf.Min(minRange, sumRange / (2 * weapons.Length));
+            preferredRange = Mathf.Min(minRange, sumRange / (3 * weapons.Length));
         }
     }
 
@@ -138,4 +139,6 @@ public abstract class AbstractNavigation : MonoBehaviour, IObserver<SectionDestr
             () => { CalculatePreferredRange(); Callback.FireForUpdate(() => rigid.velocity = newVelocity, this, Callback.Mode.FIXEDUPDATE); }
             , this, Callback.Mode.FIXEDUPDATE);
     }
+
+    public void Notify(SelfShipDestroyedMessage message) { Destroy(this); }
 }

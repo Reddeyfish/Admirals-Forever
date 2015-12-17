@@ -1,10 +1,13 @@
 ﻿using UnityEngine;
 using UnityEngine.Assertions;
 using System.Collections;
+using System.Collections.Generic;
+using System.Linq;
 
 [RequireComponent(typeof(LineRenderer))]
 public class PlayerControl : MonoBehaviour, IObserver<DoubleLeftMouseClickMessage>, IObserver<LeftMouseDragStartMessage>, IObserver<LeftMouseDraggingMessage>, IObserver<LeftMouseDragEndMessage>,
-    IObserver<RightMouseDragStartMessage>, IObserver<RightMouseDraggingMessage>, IObserver<RightMouseDragEndMessage>
+    IObserver<RightMouseDragStartMessage>, IObserver<RightMouseDraggingMessage>, IObserver<RightMouseDragEndMessage>,
+    IObserver<ShipDestroyedMessage>
 {
     [SerializeField]
     protected GameObject enemyShip;
@@ -39,7 +42,86 @@ public class PlayerControl : MonoBehaviour, IObserver<DoubleLeftMouseClickMessag
     [AutoLink(parentName = "Reticle", parentTag = Tags.canvas)]
     protected RectTransform reticle;
 
-    public Navigation selectedShip;
+    [SerializeField]
+    [AutoLink(parentName = "SelectionBox", parentTag = Tags.canvas)]
+    protected RectTransform selectionBox;
+
+    HashSet<Navigation> selectedShips = new HashSet<Navigation>();
+    float groupMaxSpeed = float.MaxValue;
+    float groupAccel = float.MaxValue;
+    void AddShip(Navigation ship)
+    {
+        selectedShips.Add(ship);
+        ship.Selection = Navigation.SelectionMode.SELECTED;
+        ship.GetComponent<Ship>().Subscribe<ShipDestroyedMessage>(this);
+        if (ship.MaxSpeed < groupMaxSpeed) 
+            groupMaxSpeed = ship.MaxSpeed; 
+        if (ship.Accel < groupAccel) 
+            groupAccel = ship.Accel;
+    }
+    void ClearShips()
+    {
+        foreach (Navigation ship in selectedShips)
+            _unselectShip(ship);
+
+        selectedShips.Clear();
+        SetDefaultSpeedAndAccel();
+    }
+    void RemoveShip(Navigation ship)
+    {
+        selectedShips.Remove(ship);
+        _unselectShip(ship);
+        if (selectedShips.Count == 0)
+            SetDefaultSpeedAndAccel();
+        else
+        {
+            groupMaxSpeed = selectedShips.Min((Navigation nav) => nav.MaxSpeed);
+            groupAccel = selectedShips.Min((Navigation nav) => nav.Accel);
+        }
+    }
+
+    void _unselectShip(Navigation ship)
+    {
+        ship.Selection = Navigation.SelectionMode.UNSELECTED;
+        ship.GetComponent<Ship>().Unsubscribe<ShipDestroyedMessage>(this);
+    }
+    void ToggleShip(Navigation ship)
+    {
+        if (selectedShips.Contains(ship))
+            RemoveShip(ship);
+        else
+            AddShip(ship);
+    }
+    void SetDefaultSpeedAndAccel() { groupMaxSpeed = float.MaxValue; groupAccel = float.MaxValue; }
+
+    HashSet<Navigation> highlightedShips = new HashSet<Navigation>();
+
+    void UpdateHighlightedShips(HashSet<Navigation> newHighlightedShips)
+    {
+        foreach (Navigation ship in highlightedShips)
+        {
+            if (!newHighlightedShips.Contains(ship))
+            {
+                if (selectedShips.Contains(ship))
+                {
+                    ship.Selection = Navigation.SelectionMode.SELECTED;
+                }
+                else
+                {
+                    ship.Selection = Navigation.SelectionMode.UNSELECTED;
+                }
+            }
+        }
+
+        foreach (Navigation ship in newHighlightedShips)
+        {
+            if (!highlightedShips.Contains(ship))
+            {
+                ship.Selection = Navigation.SelectionMode.HIGHLIGHTED;
+            }
+        }
+        highlightedShips = newHighlightedShips;
+    }
 
     int screenWidth;
     int screenHeight;
@@ -73,6 +155,10 @@ public class PlayerControl : MonoBehaviour, IObserver<DoubleLeftMouseClickMessag
         mainCamera = Camera.main;
         Assert.IsTrue(mainCamera.orthographic);
         mainCameraTransform = mainCamera.transform;
+        foreach (Navigation ship in FindObjectsOfType<Navigation>())
+        {
+            AddShip(ship);
+        }
     }
 	
 	// Update is called once per frame
@@ -88,7 +174,14 @@ public class PlayerControl : MonoBehaviour, IObserver<DoubleLeftMouseClickMessag
             mainCameraTransform.position += (Vector3)(screenScrollSpeed * Mathf.Sqrt(mainCamera.orthographicSize) * Time.deltaTime * Vector2.right);
         if (Input.mousePosition.y >= screenHeight - screenEdgeDistance || Input.GetKey(KeyCode.UpArrow))
             mainCameraTransform.position += (Vector3)(screenScrollSpeed * Mathf.Sqrt(mainCamera.orthographicSize) * Time.deltaTime * Vector2.up);
+
+        UpdateHighlightedShips(hitFriendlies(Input.mousePosition.toWorldPoint()));
 	}
+
+    public void Notify(ShipDestroyedMessage m)
+    {
+        RemoveShip(m.destroyedShip.GetComponent<Navigation>());
+    }
 
     public void Notify(DoubleLeftMouseClickMessage m)
     {
@@ -103,12 +196,44 @@ public class PlayerControl : MonoBehaviour, IObserver<DoubleLeftMouseClickMessag
 
     public void Notify(LeftMouseDraggingMessage m)
     {
-
+        if ((m.current - m.start).magnitude > dragVsClickTolerance)
+        {
+            selectionBox.gameObject.SetActive(true);
+            Vector2 center = (m.current + m.start) / 2;
+            Vector2 magnitude = new Vector2(Mathf.Abs(m.current.x - center.x), Mathf.Abs(m.current.y - center.y));
+            selectionBox.position = center;
+            selectionBox.sizeDelta = magnitude;
+        }
+        else
+        {
+            selectionBox.gameObject.SetActive(false);
+        }
     }
 
     public void Notify(LeftMouseDragEndMessage m)
     {
+        selectionBox.gameObject.SetActive(false);
 
+        HashSet<Navigation> hits;
+        if ((m.end - m.start).magnitude > dragVsClickTolerance)
+            hits = hitFriendlies(m.startWorldPoint, m.endWorldPoint);
+        else
+            hits = hitFriendlies(m.endWorldPoint);
+
+        if (MultipleSelect())
+        {
+            foreach (Navigation ship in hits)
+            {
+                ToggleShip(ship);
+            }
+        }
+        else
+        {
+            ClearShips();
+            foreach(Navigation ship in hits)
+                AddShip(ship);
+        }
+        
     }
 
     public void Notify(RightMouseDragStartMessage m)
@@ -140,6 +265,30 @@ public class PlayerControl : MonoBehaviour, IObserver<DoubleLeftMouseClickMessag
             reticle.gameObject.SetActive(false);
         }
     }
+    HashSet<Navigation> hitFriendlies(Vector2 position)
+    {
+        Collider2D[] hits = Physics2D.OverlapCircleAll(position, targetingFudgeDistance, shipLayerMask);
+        return getFriendlies(hits);
+    }
+    HashSet<Navigation> hitFriendlies(Vector2 startPosition, Vector2 endPosition)
+    {
+        Collider2D[] hits = Physics2D.OverlapAreaAll(startPosition, endPosition, shipLayerMask);
+        return getFriendlies(hits);
+    }
+    HashSet<Navigation> getFriendlies(Collider2D[] hits)
+    {
+        HashSet<Navigation> results = new HashSet<Navigation>();
+        foreach (Collider2D hit in hits)
+        {
+            if (hit.CompareTag(Tags.ship))
+            {
+                Navigation ship = hit.GetComponentInParent<Navigation>();
+                if (ship != null)
+                    results.Add(ship);
+            }
+        }
+        return results;
+    }
 
     Ship hitEnemy(Vector2 position)
     {
@@ -167,33 +316,57 @@ public class PlayerControl : MonoBehaviour, IObserver<DoubleLeftMouseClickMessag
         Ship target = hitEnemy(m.endWorldPoint);
         if (target != null)
         {
-            checkClearPreviousAttackOrders(selectedShip);
-            selectedShip.addAttackOrder(new AttackOrder(target));
+            checkClearPreviousAttackOrders(selectedShips);
+            foreach (Navigation selectedShip in selectedShips)
+                selectedShip.addAttackOrder(new AttackOrder(target));
         }
-        else if ((m.end - m.start).magnitude > dragVsClickTolerance)
+        else if (selectedShips.Count != 0)
         {
-            //then treat it as a drag
-            checkClearPreviousMovementOrders(selectedShip);
-            selectedShip.addMovementOrder(new MoveFaceOrder(m.start.toWorldPoint(), selectedShip.MaxSpeed, selectedShip.Accel, m.end.toWorldPoint() - m.start.toWorldPoint()));
-        }
-        else
-        {
-            //then treat it as a click
-            checkClearPreviousMovementOrders(selectedShip);
-            selectedShip.addMovementOrder(new MovementOrder(m.end.toWorldPoint(), selectedShip.MaxSpeed, selectedShip.Accel));
+            //movement orders
+            Vector2 centerPoint = Vector2.zero;
+            foreach (Navigation selectedShip in selectedShips)
+                centerPoint += (Vector2)(selectedShip.transform.position);
+            centerPoint /= selectedShips.Count;
+
+            if ((m.end - m.start).magnitude > dragVsClickTolerance)
+            {
+                //then treat it as a drag
+                checkClearPreviousMovementOrders(selectedShips);
+                Vector2 direction = m.end.toWorldPoint() - m.start.toWorldPoint();
+                foreach (Navigation selectedShip in selectedShips)
+                    selectedShip.addMovementOrder(new MoveFaceOrder(formationPoint(selectedShip, centerPoint, m.startWorldPoint), groupMaxSpeed, groupAccel, direction));
+            }
+            else
+            {
+                //then treat it as a click
+                checkClearPreviousMovementOrders(selectedShips);
+                foreach (Navigation selectedShip in selectedShips)
+                    selectedShip.addMovementOrder(new MovementOrder(formationPoint(selectedShip, centerPoint, m.endWorldPoint), groupMaxSpeed, groupAccel));
+            }
         }
     }
 
-    void checkClearPreviousAttackOrders(Navigation selectedShip)
+    Vector2 formationPoint(Navigation selectedShip, Vector2 centerPoint, Vector2 targetPoint)
     {
-        if (!MultipleSelect())
-            selectedShip.clearAttackOrders();
+        return targetPoint + ((Vector2)(selectedShip.transform.position) - centerPoint);
     }
 
-    void checkClearPreviousMovementOrders(Navigation selectedShip)
+    void checkClearPreviousAttackOrders(HashSet<Navigation> selectedShips)
     {
         if (!MultipleSelect())
-            selectedShip.clearMovementOrders();
+        {
+            foreach(Navigation selectedShip in selectedShips)
+                selectedShip.clearAttackOrders();
+        }
+    }
+
+    void checkClearPreviousMovementOrders(HashSet<Navigation> selectedShips)
+    {
+        if (!MultipleSelect())
+        {
+            foreach (Navigation selectedShip in selectedShips)
+                selectedShip.clearMovementOrders();
+        }
     }
 
     bool MultipleSelect()
